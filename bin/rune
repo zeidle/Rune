@@ -65,6 +65,7 @@ print_global_help() {
   echo "  remove <name>          Delete rune"
   echo "  update                 Update Rune CLI"
   echo "  version                Show Rune version"
+  echo "  doctor                 Check Rune installation"
   echo ""
   echo "Examples:"
   echo "  rune list"
@@ -72,7 +73,20 @@ print_global_help() {
   echo "  rune help ios-run"
   echo "  rune update"
   echo "  rune version"
+  echo "  rune doctor"
   echo ""
+}
+
+doctor_ok() {
+  echo "✅ $1"
+}
+
+doctor_warn() {
+  echo "⚠️  $1"
+}
+
+doctor_fail() {
+  echo "❌ $1"
 }
 
 # =========================
@@ -87,6 +101,114 @@ case "$command" in
 
   version|--version|-v)
     echo "Rune $RUNE_VERSION"
+    ;;
+
+  doctor)
+    echo ""
+    echo "Rune Doctor"
+    echo "=================================="
+    echo ""
+
+    echo "Version:"
+    echo "  Rune $RUNE_VERSION"
+    echo ""
+
+    echo "Paths:"
+    echo "  RUNE_HOME: $RUNE_HOME"
+    echo "  RUNE_BIN:  $RUNE_BIN"
+    echo "  RUNE_EXEC: $RUNE_EXEC"
+    echo "  RUNE_DIR:  $RUNE_DIR"
+    echo ""
+
+    echo "Update source:"
+    echo "  $RUNE_REPO_RAW_URL"
+    echo ""
+
+    echo "Checks:"
+
+    if [ -d "$RUNE_HOME" ]; then
+      doctor_ok "Rune home exists"
+    else
+      doctor_fail "Rune home does not exist: $RUNE_HOME"
+    fi
+
+    if [ -d "$RUNE_BIN" ]; then
+      doctor_ok "Rune bin directory exists"
+    else
+      doctor_fail "Rune bin directory does not exist: $RUNE_BIN"
+    fi
+
+    if [ -f "$RUNE_EXEC" ]; then
+      doctor_ok "Rune executable exists"
+    else
+      doctor_fail "Rune executable does not exist: $RUNE_EXEC"
+    fi
+
+    if [ -x "$RUNE_EXEC" ]; then
+      doctor_ok "Rune executable is executable"
+    else
+      doctor_fail "Rune executable is not executable"
+    fi
+
+    if [ -d "$RUNE_DIR" ]; then
+      doctor_ok "Rune runes directory exists"
+    else
+      doctor_fail "Rune runes directory does not exist: $RUNE_DIR"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+      doctor_ok "curl is available"
+    else
+      doctor_fail "curl is not available"
+    fi
+
+    if command -v "${EDITOR:-vim}" >/dev/null 2>&1; then
+      doctor_ok "editor is available: ${EDITOR:-vim}"
+    else
+      doctor_warn "editor not found: ${EDITOR:-vim}"
+    fi
+
+    resolved_rune="$(command -v rune 2>/dev/null || true)"
+
+    if [ -n "$resolved_rune" ]; then
+      echo ""
+      echo "Resolved command:"
+      echo "  rune -> $resolved_rune"
+
+      if [ "$resolved_rune" = "$RUNE_EXEC" ]; then
+        doctor_ok "PATH resolves rune to expected executable"
+      else
+        doctor_warn "PATH resolves rune to a different executable"
+        echo "  Expected: $RUNE_EXEC"
+        echo "  Actual:   $resolved_rune"
+      fi
+    else
+      doctor_fail "rune is not available in PATH"
+    fi
+
+    if echo ":$PATH:" | grep -q ":$RUNE_BIN:"; then
+      doctor_ok "Rune bin is in PATH"
+    else
+      doctor_warn "Rune bin is not in PATH"
+      echo "  Add this to your shell config:"
+      echo '  export PATH="$HOME/.rune/bin:$PATH"'
+    fi
+
+    rune_count=0
+
+    for dir in "$RUNE_DIR"/*; do
+      [ -d "$dir" ] || continue
+      [ -f "$dir/rune.yaml" ] || continue
+      rune_count=$((rune_count + 1))
+    done
+
+    echo ""
+    echo "Runes:"
+    echo "  $rune_count installed"
+
+    echo ""
+    echo "Doctor finished."
+    echo ""
     ;;
 
   list)
