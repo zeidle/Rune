@@ -10,7 +10,7 @@ RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
 
-RUNE_VERSION="0.2.0"
+RUNE_VERSION="0.3.0"
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
