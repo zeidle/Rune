@@ -1,6 +1,12 @@
 #!/bin/bash
 
-RUNE_DIR="$HOME/.rune/runes"
+RUNE_HOME="$HOME/.rune"
+RUNE_BIN="$RUNE_HOME/bin"
+RUNE_EXEC="$RUNE_BIN/rune"
+RUNE_DIR="$RUNE_HOME/runes"
+RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
+
+mkdir -p "$RUNE_BIN"
 mkdir -p "$RUNE_DIR"
 
 command="$1"
@@ -37,6 +43,34 @@ check_requires() {
 # =========================
 
 case "$command" in
+
+    update)
+    echo ""
+    echo "Updating Rune..."
+
+    tmp_file="$(mktemp)"
+
+    if ! curl -fsSL "$RUNE_REPO_RAW_URL/bin/rune" -o "$tmp_file"; then
+      echo "❌ Failed to download latest Rune."
+      rm -f "$tmp_file"
+      exit 1
+    fi
+
+    chmod +x "$tmp_file"
+
+    if [ -f "$RUNE_EXEC" ]; then
+      cp "$RUNE_EXEC" "$RUNE_EXEC.backup"
+    fi
+
+    mv "$tmp_file" "$RUNE_EXEC"
+    chmod +x "$RUNE_EXEC"
+
+    echo "✅ Rune updated."
+    echo ""
+    echo "Run:"
+    echo "  rune"
+    echo ""
+    ;;
 
   list)
     echo ""
@@ -208,6 +242,7 @@ EOF
     echo "  edit <name>          Edit rune script"
     echo "  edit <name> --config Edit rune.yaml"
     echo "  remove <name>        Delete rune"
+    echo "  update               Update Rune CLI"
     echo ""
     echo "Examples:"
     echo "  rune list"
