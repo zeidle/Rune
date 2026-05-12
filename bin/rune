@@ -10,7 +10,7 @@ RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
 
-RUNE_VERSION="0.3.0"
+RUNE_VERSION="0.4.0"
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
@@ -58,6 +58,7 @@ print_global_help() {
   echo "  list                   List available runes"
   echo "  run <name> [args...]   Run a rune"
   echo "  help <name>            Show help for a rune"
+  echo "  info <name>            Show rune metadata and status"
   echo "  add                    Create new rune"
   echo "  edit <name>            Edit rune entry file"
   echo "  edit <name> --config   Edit rune.yaml"
@@ -69,6 +70,7 @@ print_global_help() {
   echo ""
   echo "Examples:"
   echo "  rune list"
+  echo "  rune info ios-run"
   echo "  rune run ios-run --scheme App"
   echo "  rune help ios-run"
   echo "  rune update"
@@ -89,6 +91,11 @@ doctor_fail() {
   echo "❌ $1"
 }
 
+get_requires() {
+  local file="$1"
+  awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //' || true
+}
+
 # =========================
 # Commands
 # =========================
@@ -97,6 +104,122 @@ case "$command" in
 
   ""|--help|-h)
     print_global_help
+    ;;
+
+  info)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
+    dir="$RUNE_DIR/$target"
+    yaml="$dir/rune.yaml"
+
+    echo ""
+    echo "Rune Info"
+    echo "=================================="
+    echo ""
+
+    if [ ! -d "$dir" ]; then
+      echo "❌ Rune not found: $target"
+      echo ""
+      exit 1
+    fi
+
+    if [ ! -f "$yaml" ]; then
+      echo "❌ Missing rune.yaml for: $target"
+      echo ""
+      exit 1
+    fi
+
+    name=$(get_field name "$yaml")
+    version=$(get_field version "$yaml")
+    description=$(get_field description "$yaml")
+    runtime=$(get_field runtime "$yaml")
+    entry=$(get_field entry "$yaml")
+
+    if [ -z "$entry" ]; then
+      entry="run"
+    fi
+
+    entry_path="$dir/$entry"
+
+    echo "Name:"
+    echo "  ${name:-$target}"
+    echo ""
+
+    echo "Description:"
+    echo "  ${description:-No description}"
+    echo ""
+
+    echo "Version:"
+    echo "  ${version:-unknown}"
+    echo ""
+
+    echo "Runtime:"
+    echo "  ${runtime:-unknown}"
+    echo ""
+
+    echo "Entry:"
+    echo "  $entry"
+    echo ""
+
+    echo "Path:"
+    echo "  $dir"
+    echo ""
+
+    echo "Entry path:"
+    echo "  $entry_path"
+    echo ""
+
+    echo "Requires:"
+    deps=$(get_requires "$yaml")
+
+    if [ -z "$deps" ]; then
+      echo "  none"
+    else
+      while IFS= read -r dep; do
+        [ -z "$dep" ] && continue
+        echo "  $dep"
+      done <<< "$deps"
+    fi
+
+    echo ""
+    echo "Status:"
+
+    if [ -f "$yaml" ]; then
+      doctor_ok "rune.yaml exists"
+    else
+      doctor_fail "rune.yaml missing"
+    fi
+
+    if [ -f "$entry_path" ]; then
+      doctor_ok "entry file exists"
+    else
+      doctor_fail "entry file missing: $entry"
+    fi
+
+    if [ -x "$entry_path" ]; then
+      doctor_ok "entry file is executable"
+    else
+      doctor_warn "entry file is not executable"
+    fi
+
+    if [ -n "$deps" ]; then
+      while IFS= read -r dep; do
+        [ -z "$dep" ] && continue
+
+        if command -v "$dep" >/dev/null 2>&1; then
+          doctor_ok "dependency available: $dep"
+        else
+          doctor_fail "dependency missing: $dep"
+        fi
+      done <<< "$deps"
+    fi
+
+    echo ""
     ;;
 
   version|--version|-v)
