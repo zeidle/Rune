@@ -1,0 +1,218 @@
+#!/bin/bash
+
+RUNE_DIR="$HOME/.rune/runes"
+mkdir -p "$RUNE_DIR"
+
+command="$1"
+target="$2"
+shift 2 2>/dev/null
+
+# =========================
+# Helpers
+# =========================
+
+get_field() {
+  grep "^$1:" "$2" | cut -d' ' -f2-
+}
+
+print_block() {
+  awk "/^$1: \|/{flag=1;next}/^[^ ]/{flag=0}flag" "$2" | sed 's/^  //'
+}
+
+check_requires() {
+  local file="$1"
+  local deps
+  deps=$(awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //')
+
+  for dep in $deps; do
+    if ! command -v "$dep" >/dev/null 2>&1; then
+      echo "❌ Missing dependency: $dep"
+      exit 1
+    fi
+  done
+}
+
+# =========================
+# Commands
+# =========================
+
+case "$command" in
+
+  list)
+    echo ""
+    echo "Available runes:"
+    echo "-----------------------------------"
+    for dir in "$RUNE_DIR"/*; do
+      [ -d "$dir" ] || continue
+      yaml="$dir/rune.yaml"
+      name=$(get_field name "$yaml")
+      desc=$(get_field description "$yaml")
+      printf "  %-20s %s\n" "$name" "$desc"
+    done
+    echo ""
+    ;;
+
+  run)
+    dir="$RUNE_DIR/$target"
+
+    if [ ! -d "$dir" ]; then
+      echo "Rune not found."
+      exit 1
+    fi
+
+    yaml="$dir/rune.yaml"
+    entry=$(get_field entry "$yaml")
+
+    if [ -z "$entry" ]; then
+      entry="run"
+    fi
+
+    check_requires "$yaml"
+
+    echo "▶ Running $target..."
+    "$dir/$entry" "$@"
+    ;;
+
+  help)
+    dir="$RUNE_DIR/$target"
+
+    if [ ! -d "$dir" ]; then
+      echo "Rune not found."
+      exit 1
+    fi
+
+    yaml="$dir/rune.yaml"
+
+    echo ""
+    echo "NAME"
+    echo "    $(get_field name "$yaml") - $(get_field description "$yaml")"
+    echo ""
+
+    echo "SYNOPSIS"
+    print_block usage "$yaml"
+    echo ""
+
+    echo "OPTIONS"
+    print_block options "$yaml"
+    echo ""
+
+    echo "EXAMPLES"
+    print_block examples "$yaml"
+    echo ""
+    ;;
+
+  add)
+    read -p "Name: " name
+    read -p "Description: " description
+    read -p "Runtime (bash/python) [bash]: " runtime
+
+    runtime=${runtime:-bash}
+    dir="$RUNE_DIR/$name"
+
+    if [ -d "$dir" ]; then
+      echo "Rune already exists."
+      exit 1
+    fi
+
+    mkdir -p "$dir"
+
+    cat > "$dir/rune.yaml" <<EOF
+name: $name
+version: 1.0.0
+description: $description
+
+requires: []
+
+usage: |
+  rune run $name
+
+options: |
+
+examples: |
+
+runtime: $runtime
+entry: run
+EOF
+
+    cat > "$dir/run" <<EOF
+#!/bin/bash
+set -e
+
+# $description
+
+echo "Hello from $name"
+EOF
+
+    chmod +x "$dir/run"
+
+    echo ""
+    echo "Opening entry file..."
+    ${EDITOR:-vim} "$dir/run"
+
+    echo ""
+    echo "✅ Rune '$name' created."
+    ;;
+
+  edit)
+    dir="$RUNE_DIR/$target"
+
+    if [ ! -d "$dir" ]; then
+      echo "Rune not found."
+      exit 1
+    fi
+
+    yaml="$dir/rune.yaml"
+    entry=$(get_field entry "$yaml")
+
+    if [ -z "$entry" ]; then
+      entry="run"
+    fi
+
+    case "$1" in
+      --config)
+        ${EDITOR:-vim} "$yaml"
+        ;;
+      --all)
+        ${EDITOR:-vim} "$dir"
+        ;;
+      *)
+        ${EDITOR:-vim} "$dir/$entry"
+        ;;
+    esac
+    ;;
+
+  remove)
+    dir="$RUNE_DIR/$target"
+
+    if [ -d "$dir" ]; then
+      rm -rf "$dir"
+      echo "🗑 Rune '$target' removed."
+    else
+      echo "Rune not found."
+    fi
+    ;;
+
+    ""|help|--help|-h)
+    echo ""
+    echo "Rune CLI"
+    echo "=================================="
+    echo ""
+    echo "Usage:"
+    echo "  rune <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list                 List available runes"
+    echo "  run <name>           Run a rune"
+    echo "  help <name>          Show help for a rune"
+    echo "  add                  Create new rune"
+    echo "  edit <name>          Edit rune script"
+    echo "  edit <name> --config Edit rune.yaml"
+    echo "  remove <name>        Delete rune"
+    echo ""
+    echo "Examples:"
+    echo "  rune list"
+    echo "  rune run ios-run --scheme App"
+    echo "  rune help ios-run"
+    echo ""
+    ;;
+esac
