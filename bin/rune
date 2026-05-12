@@ -10,6 +10,7 @@ RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
 
+RUNE_VERSION="0.2.0"
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
@@ -47,7 +48,7 @@ check_requires() {
 
 print_global_help() {
   echo ""
-  echo "Rune CLI"
+  echo "Rune CLI $RUNE_VERSION"
   echo "=================================="
   echo ""
   echo "Usage:"
@@ -63,12 +64,14 @@ print_global_help() {
   echo "  edit <name> --all      Open rune directory"
   echo "  remove <name>          Delete rune"
   echo "  update                 Update Rune CLI"
+  echo "  version                Show Rune version"
   echo ""
   echo "Examples:"
   echo "  rune list"
   echo "  rune run ios-run --scheme App"
   echo "  rune help ios-run"
   echo "  rune update"
+  echo "  rune version"
   echo ""
 }
 
@@ -80,6 +83,10 @@ case "$command" in
 
   ""|--help|-h)
     print_global_help
+    ;;
+
+  version|--version|-v)
+    echo "Rune $RUNE_VERSION"
     ;;
 
   list)
