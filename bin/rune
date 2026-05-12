@@ -1,9 +1,15 @@
 #!/bin/bash
+set -e
+
+# =========================
+# Rune paths
+# =========================
 
 RUNE_HOME="$HOME/.rune"
 RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
+
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
@@ -11,7 +17,7 @@ mkdir -p "$RUNE_DIR"
 
 command="$1"
 target="$2"
-shift 2 2>/dev/null
+shift 2 2>/dev/null || true
 
 # =========================
 # Helpers
@@ -28,7 +34,8 @@ print_block() {
 check_requires() {
   local file="$1"
   local deps
-  deps=$(awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //')
+
+  deps=$(awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //') || true
 
   for dep in $deps; do
     if ! command -v "$dep" >/dev/null 2>&1; then
@@ -38,84 +45,137 @@ check_requires() {
   done
 }
 
+print_global_help() {
+  echo ""
+  echo "Rune CLI"
+  echo "=================================="
+  echo ""
+  echo "Usage:"
+  echo "  rune <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  list                   List available runes"
+  echo "  run <name> [args...]   Run a rune"
+  echo "  help <name>            Show help for a rune"
+  echo "  add                    Create new rune"
+  echo "  edit <name>            Edit rune entry file"
+  echo "  edit <name> --config   Edit rune.yaml"
+  echo "  edit <name> --all      Open rune directory"
+  echo "  remove <name>          Delete rune"
+  echo "  update                 Update Rune CLI"
+  echo ""
+  echo "Examples:"
+  echo "  rune list"
+  echo "  rune run ios-run --scheme App"
+  echo "  rune help ios-run"
+  echo "  rune update"
+  echo ""
+}
+
 # =========================
 # Commands
 # =========================
 
 case "$command" in
 
-    update)
-    echo ""
-    echo "Updating Rune..."
-
-    tmp_file="$(mktemp)"
-
-    if ! curl -fsSL "$RUNE_REPO_RAW_URL/bin/rune" -o "$tmp_file"; then
-      echo "❌ Failed to download latest Rune."
-      rm -f "$tmp_file"
-      exit 1
-    fi
-
-    chmod +x "$tmp_file"
-
-    if [ -f "$RUNE_EXEC" ]; then
-      cp "$RUNE_EXEC" "$RUNE_EXEC.backup"
-    fi
-
-    mv "$tmp_file" "$RUNE_EXEC"
-    chmod +x "$RUNE_EXEC"
-
-    echo "✅ Rune updated."
-    echo ""
-    echo "Run:"
-    echo "  rune"
-    echo ""
+  ""|--help|-h)
+    print_global_help
     ;;
 
   list)
     echo ""
     echo "Available runes:"
     echo "-----------------------------------"
+
+    found=false
+
     for dir in "$RUNE_DIR"/*; do
       [ -d "$dir" ] || continue
+
       yaml="$dir/rune.yaml"
+
+      if [ ! -f "$yaml" ]; then
+        continue
+      fi
+
       name=$(get_field name "$yaml")
       desc=$(get_field description "$yaml")
+
       printf "  %-20s %s\n" "$name" "$desc"
+      found=true
     done
+
+    if [ "$found" = false ]; then
+      echo "  No runes found."
+    fi
+
     echo ""
     ;;
 
   run)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
     dir="$RUNE_DIR/$target"
 
     if [ ! -d "$dir" ]; then
-      echo "Rune not found."
+      echo "❌ Rune not found: $target"
       exit 1
     fi
 
     yaml="$dir/rune.yaml"
+
+    if [ ! -f "$yaml" ]; then
+      echo "❌ Missing rune.yaml for: $target"
+      exit 1
+    fi
+
     entry=$(get_field entry "$yaml")
 
     if [ -z "$entry" ]; then
       entry="run"
     fi
 
+    entry_path="$dir/$entry"
+
+    if [ ! -f "$entry_path" ]; then
+      echo "❌ Entry file not found: $entry"
+      exit 1
+    fi
+
+    if [ ! -x "$entry_path" ]; then
+      chmod +x "$entry_path"
+    fi
+
     check_requires "$yaml"
 
     echo "▶ Running $target..."
-    "$dir/$entry" "$@"
+    "$entry_path" "$@"
     ;;
 
   help)
+    if [ -z "$target" ]; then
+      print_global_help
+      exit 0
+    fi
+
     dir="$RUNE_DIR/$target"
 
     if [ ! -d "$dir" ]; then
-      echo "Rune not found."
+      echo "❌ Rune not found: $target"
       exit 1
     fi
 
     yaml="$dir/rune.yaml"
+
+    if [ ! -f "$yaml" ]; then
+      echo "❌ Missing rune.yaml for: $target"
+      exit 1
+    fi
 
     echo ""
     echo "NAME"
@@ -143,8 +203,13 @@ case "$command" in
     runtime=${runtime:-bash}
     dir="$RUNE_DIR/$name"
 
+    if [ -z "$name" ]; then
+      echo "❌ Name is required."
+      exit 1
+    fi
+
     if [ -d "$dir" ]; then
-      echo "Rune already exists."
+      echo "❌ Rune already exists: $name"
       exit 1
     fi
 
@@ -188,14 +253,27 @@ EOF
     ;;
 
   edit)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
     dir="$RUNE_DIR/$target"
 
     if [ ! -d "$dir" ]; then
-      echo "Rune not found."
+      echo "❌ Rune not found: $target"
       exit 1
     fi
 
     yaml="$dir/rune.yaml"
+
+    if [ ! -f "$yaml" ]; then
+      echo "❌ Missing rune.yaml for: $target"
+      exit 1
+    fi
+
     entry=$(get_field entry "$yaml")
 
     if [ -z "$entry" ]; then
@@ -216,38 +294,63 @@ EOF
     ;;
 
   remove)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
     dir="$RUNE_DIR/$target"
 
     if [ -d "$dir" ]; then
       rm -rf "$dir"
       echo "🗑 Rune '$target' removed."
     else
-      echo "Rune not found."
+      echo "❌ Rune not found: $target"
+      exit 1
     fi
     ;;
 
-    ""|help|--help|-h)
+  update)
     echo ""
-    echo "Rune CLI"
-    echo "=================================="
+    echo "Updating Rune..."
+
+    if ! command -v curl >/dev/null 2>&1; then
+      echo "❌ curl not found."
+      exit 1
+    fi
+
+    tmp_file="$(mktemp)"
+
+    if ! curl -fsSL "$RUNE_REPO_RAW_URL/bin/rune" -o "$tmp_file"; then
+      echo "❌ Failed to download latest Rune."
+      rm -f "$tmp_file"
+      exit 1
+    fi
+
+    chmod +x "$tmp_file"
+
+    if [ -f "$RUNE_EXEC" ]; then
+      cp "$RUNE_EXEC" "$RUNE_EXEC.backup"
+    fi
+
+    mv "$tmp_file" "$RUNE_EXEC"
+    chmod +x "$RUNE_EXEC"
+
+    echo "✅ Rune updated."
     echo ""
-    echo "Usage:"
-    echo "  rune <command> [options]"
+    echo "Backup saved to:"
+    echo "  $RUNE_EXEC.backup"
     echo ""
-    echo "Commands:"
-    echo "  list                 List available runes"
-    echo "  run <name>           Run a rune"
-    echo "  help <name>          Show help for a rune"
-    echo "  add                  Create new rune"
-    echo "  edit <name>          Edit rune script"
-    echo "  edit <name> --config Edit rune.yaml"
-    echo "  remove <name>        Delete rune"
-    echo "  update               Update Rune CLI"
+    ;;
+
+  *)
     echo ""
-    echo "Examples:"
-    echo "  rune list"
-    echo "  rune run ios-run --scheme App"
-    echo "  rune help ios-run"
+    echo "❌ Unknown command: $command"
+    echo "Run:"
+    echo "  rune help"
     echo ""
+    exit 1
     ;;
 esac
