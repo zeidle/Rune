@@ -336,6 +336,12 @@ EOF
       exit 1
     fi
 
+    if ! grep -q "RUNE_VERSION=" "$tmp_file"; then
+      echo "❌ Downloaded file does not look like Rune."
+      rm -f "$tmp_file"
+      exit 1
+    fi
+
     chmod +x "$tmp_file"
 
     if [ -f "$RUNE_EXEC" ]; then
@@ -349,6 +355,10 @@ EOF
     echo ""
     echo "Backup saved to:"
     echo "  $RUNE_EXEC.backup"
+    echo ""
+
+    echo "Installed version:"
+    "$RUNE_EXEC" version
     echo ""
     ;;
 
