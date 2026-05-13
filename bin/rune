@@ -32,11 +32,31 @@ print_block() {
   awk "/^$1: \|/{flag=1;next}/^[^ ]/{flag=0}flag" "$2" | sed 's/^  //'
 }
 
+get_requires() {
+  local file="$1"
+
+  awk '
+    /^requires:[[:space:]]*$/ {
+      flag=1
+      next
+    }
+
+    /^[^[:space:]]/ {
+      flag=0
+    }
+
+    flag && /^[[:space:]]*-/ {
+      sub(/^[[:space:]]*-[[:space:]]*/, "")
+      print
+    }
+  ' "$file" || true
+}
+
 check_requires() {
   local file="$1"
   local deps
 
-  deps=$(awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //') || true
+  deps=$(get_requires "$file")
 
   for dep in $deps; do
     if ! command -v "$dep" >/dev/null 2>&1; then
@@ -44,6 +64,18 @@ check_requires() {
       exit 1
     fi
   done
+}
+
+doctor_ok() {
+  echo "✅ $1"
+}
+
+doctor_warn() {
+  echo "⚠️  $1"
+}
+
+doctor_fail() {
+  echo "❌ $1"
 }
 
 print_global_help() {
@@ -70,30 +102,13 @@ print_global_help() {
   echo ""
   echo "Examples:"
   echo "  rune list"
-  echo "  rune info ios-run"
   echo "  rune run ios-run --scheme App"
   echo "  rune help ios-run"
+  echo "  rune info ios-run"
   echo "  rune update"
   echo "  rune version"
   echo "  rune doctor"
   echo ""
-}
-
-doctor_ok() {
-  echo "✅ $1"
-}
-
-doctor_warn() {
-  echo "⚠️  $1"
-}
-
-doctor_fail() {
-  echo "❌ $1"
-}
-
-get_requires() {
-  local file="$1"
-  awk '/^requires:/,/^[^ ]/' "$file" | grep "-" | sed 's/- //' || true
 }
 
 # =========================
@@ -104,122 +119,6 @@ case "$command" in
 
   ""|--help|-h)
     print_global_help
-    ;;
-
-  info)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
-
-    dir="$RUNE_DIR/$target"
-    yaml="$dir/rune.yaml"
-
-    echo ""
-    echo "Rune Info"
-    echo "=================================="
-    echo ""
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      echo ""
-      exit 1
-    fi
-
-    if [ ! -f "$yaml" ]; then
-      echo "❌ Missing rune.yaml for: $target"
-      echo ""
-      exit 1
-    fi
-
-    name=$(get_field name "$yaml")
-    version=$(get_field version "$yaml")
-    description=$(get_field description "$yaml")
-    runtime=$(get_field runtime "$yaml")
-    entry=$(get_field entry "$yaml")
-
-    if [ -z "$entry" ]; then
-      entry="run"
-    fi
-
-    entry_path="$dir/$entry"
-
-    echo "Name:"
-    echo "  ${name:-$target}"
-    echo ""
-
-    echo "Description:"
-    echo "  ${description:-No description}"
-    echo ""
-
-    echo "Version:"
-    echo "  ${version:-unknown}"
-    echo ""
-
-    echo "Runtime:"
-    echo "  ${runtime:-unknown}"
-    echo ""
-
-    echo "Entry:"
-    echo "  $entry"
-    echo ""
-
-    echo "Path:"
-    echo "  $dir"
-    echo ""
-
-    echo "Entry path:"
-    echo "  $entry_path"
-    echo ""
-
-    echo "Requires:"
-    deps=$(get_requires "$yaml")
-
-    if [ -z "$deps" ]; then
-      echo "  none"
-    else
-      while IFS= read -r dep; do
-        [ -z "$dep" ] && continue
-        echo "  $dep"
-      done <<< "$deps"
-    fi
-
-    echo ""
-    echo "Status:"
-
-    if [ -f "$yaml" ]; then
-      doctor_ok "rune.yaml exists"
-    else
-      doctor_fail "rune.yaml missing"
-    fi
-
-    if [ -f "$entry_path" ]; then
-      doctor_ok "entry file exists"
-    else
-      doctor_fail "entry file missing: $entry"
-    fi
-
-    if [ -x "$entry_path" ]; then
-      doctor_ok "entry file is executable"
-    else
-      doctor_warn "entry file is not executable"
-    fi
-
-    if [ -n "$deps" ]; then
-      while IFS= read -r dep; do
-        [ -z "$dep" ] && continue
-
-        if command -v "$dep" >/dev/null 2>&1; then
-          doctor_ok "dependency available: $dep"
-        else
-          doctor_fail "dependency missing: $dep"
-        fi
-      done <<< "$deps"
-    fi
-
-    echo ""
     ;;
 
   version|--version|-v)
@@ -444,6 +343,122 @@ case "$command" in
 
     echo "EXAMPLES"
     print_block examples "$yaml"
+    echo ""
+    ;;
+
+  info)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
+    dir="$RUNE_DIR/$target"
+    yaml="$dir/rune.yaml"
+
+    echo ""
+    echo "Rune Info"
+    echo "=================================="
+    echo ""
+
+    if [ ! -d "$dir" ]; then
+      echo "❌ Rune not found: $target"
+      echo ""
+      exit 1
+    fi
+
+    if [ ! -f "$yaml" ]; then
+      echo "❌ Missing rune.yaml for: $target"
+      echo ""
+      exit 1
+    fi
+
+    name=$(get_field name "$yaml")
+    version=$(get_field version "$yaml")
+    description=$(get_field description "$yaml")
+    runtime=$(get_field runtime "$yaml")
+    entry=$(get_field entry "$yaml")
+
+    if [ -z "$entry" ]; then
+      entry="run"
+    fi
+
+    entry_path="$dir/$entry"
+
+    echo "Name:"
+    echo "  ${name:-$target}"
+    echo ""
+
+    echo "Description:"
+    echo "  ${description:-No description}"
+    echo ""
+
+    echo "Version:"
+    echo "  ${version:-unknown}"
+    echo ""
+
+    echo "Runtime:"
+    echo "  ${runtime:-unknown}"
+    echo ""
+
+    echo "Entry:"
+    echo "  $entry"
+    echo ""
+
+    echo "Path:"
+    echo "  $dir"
+    echo ""
+
+    echo "Entry path:"
+    echo "  $entry_path"
+    echo ""
+
+    echo "Requires:"
+    deps=$(get_requires "$yaml")
+
+    if [ -z "$deps" ]; then
+      echo "  none"
+    else
+      while IFS= read -r dep; do
+        [ -z "$dep" ] && continue
+        echo "  $dep"
+      done <<< "$deps"
+    fi
+
+    echo ""
+    echo "Status:"
+
+    if [ -f "$yaml" ]; then
+      doctor_ok "rune.yaml exists"
+    else
+      doctor_fail "rune.yaml missing"
+    fi
+
+    if [ -f "$entry_path" ]; then
+      doctor_ok "entry file exists"
+    else
+      doctor_fail "entry file missing: $entry"
+    fi
+
+    if [ -x "$entry_path" ]; then
+      doctor_ok "entry file is executable"
+    else
+      doctor_warn "entry file is not executable"
+    fi
+
+    if [ -n "$deps" ]; then
+      while IFS= read -r dep; do
+        [ -z "$dep" ] && continue
+
+        if command -v "$dep" >/dev/null 2>&1; then
+          doctor_ok "dependency available: $dep"
+        else
+          doctor_fail "dependency missing: $dep"
+        fi
+      done <<< "$deps"
+    fi
+
     echo ""
     ;;
 
