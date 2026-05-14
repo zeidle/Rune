@@ -10,7 +10,7 @@ RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
 
-RUNE_VERSION="0.4.0"
+RUNE_VERSION="0.5.0"
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
@@ -78,6 +78,35 @@ doctor_fail() {
   echo "❌ $1"
 }
 
+validate_field() {
+  local field="$1"
+  local file="$2"
+  local value
+
+  value=$(get_field "$field" "$file")
+
+  if [ -n "$value" ]; then
+    doctor_ok "field exists: $field"
+    return 0
+  else
+    doctor_fail "missing field: $field"
+    return 1
+  fi
+}
+
+block_exists() {
+  local field="$1"
+  local file="$2"
+
+  if grep -q "^$field: |" "$file"; then
+    doctor_ok "block exists: $field"
+    return 0
+  else
+    doctor_warn "missing block: $field"
+    return 1
+  fi
+}
+
 print_global_help() {
   echo ""
   echo "Rune CLI $RUNE_VERSION"
@@ -91,6 +120,7 @@ print_global_help() {
   echo "  run <name> [args...]   Run a rune"
   echo "  help <name>            Show help for a rune"
   echo "  info <name>            Show rune metadata and status"
+  echo "  validate <name>        Validate rune manifest and structure"
   echo "  add                    Create new rune"
   echo "  edit <name>            Edit rune entry file"
   echo "  edit <name> --config   Edit rune.yaml"
@@ -105,6 +135,7 @@ print_global_help() {
   echo "  rune run ios-run --scheme App"
   echo "  rune help ios-run"
   echo "  rune info ios-run"
+  echo "  rune validate ios-run"
   echo "  rune update"
   echo "  rune version"
   echo "  rune doctor"
@@ -460,6 +491,155 @@ case "$command" in
     fi
 
     echo ""
+    ;;
+
+  validate)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
+    dir="$RUNE_DIR/$target"
+    yaml="$dir/rune.yaml"
+
+    errors=0
+    warnings=0
+
+    echo ""
+    echo "Rune Validate"
+    echo "=================================="
+    echo ""
+
+    echo "Target:"
+    echo "  $target"
+    echo ""
+
+    echo "Checks:"
+
+    if [ -d "$dir" ]; then
+      doctor_ok "rune directory exists"
+    else
+      doctor_fail "rune directory missing: $dir"
+      echo ""
+      exit 1
+    fi
+
+    if [ -f "$yaml" ]; then
+      doctor_ok "rune.yaml exists"
+    else
+      doctor_fail "rune.yaml missing: $yaml"
+      echo ""
+      exit 1
+    fi
+
+    echo ""
+    echo "Required fields:"
+
+    validate_field "name" "$yaml" || errors=$((errors + 1))
+    validate_field "version" "$yaml" || errors=$((errors + 1))
+    validate_field "description" "$yaml" || errors=$((errors + 1))
+    validate_field "runtime" "$yaml" || errors=$((errors + 1))
+    validate_field "entry" "$yaml" || errors=$((errors + 1))
+
+    name=$(get_field name "$yaml")
+    runtime=$(get_field runtime "$yaml")
+    entry=$(get_field entry "$yaml")
+
+    if [ -z "$entry" ]; then
+      entry="run"
+    fi
+
+    entry_path="$dir/$entry"
+
+    echo ""
+    echo "Manifest consistency:"
+
+    if [ -n "$name" ] && [ "$name" != "$target" ]; then
+      doctor_warn "manifest name differs from directory name"
+      echo "  Directory: $target"
+      echo "  Manifest:  $name"
+      warnings=$((warnings + 1))
+    else
+      doctor_ok "manifest name matches directory name"
+    fi
+
+    case "$runtime" in
+      bash|python|node|ruby|swift|go|"")
+        if [ -n "$runtime" ]; then
+          doctor_ok "runtime is supported by current manifest format: $runtime"
+        fi
+        ;;
+      *)
+        doctor_warn "unknown runtime: $runtime"
+        warnings=$((warnings + 1))
+        ;;
+    esac
+
+    echo ""
+    echo "Entry:"
+
+    if [ -f "$entry_path" ]; then
+      doctor_ok "entry file exists: $entry"
+    else
+      doctor_fail "entry file missing: $entry"
+      errors=$((errors + 1))
+    fi
+
+    if [ -f "$entry_path" ]; then
+      if [ -x "$entry_path" ]; then
+        doctor_ok "entry file is executable"
+      else
+        doctor_warn "entry file is not executable"
+        echo "  Fix:"
+        echo "  chmod +x \"$entry_path\""
+        warnings=$((warnings + 1))
+      fi
+    fi
+
+    echo ""
+    echo "Requires:"
+
+    deps=$(get_requires "$yaml")
+
+    if [ -z "$deps" ]; then
+      doctor_ok "no dependencies declared"
+    else
+      while IFS= read -r dep; do
+        [ -z "$dep" ] && continue
+
+        if command -v "$dep" >/dev/null 2>&1; then
+          doctor_ok "dependency available: $dep"
+        else
+          doctor_fail "dependency missing: $dep"
+          errors=$((errors + 1))
+        fi
+      done <<< "$deps"
+    fi
+
+    echo ""
+    echo "Help blocks:"
+
+    block_exists "usage" "$yaml" || warnings=$((warnings + 1))
+    block_exists "options" "$yaml" || warnings=$((warnings + 1))
+    block_exists "examples" "$yaml" || warnings=$((warnings + 1))
+
+    echo ""
+    echo "Summary:"
+    echo "  Errors:   $errors"
+    echo "  Warnings: $warnings"
+    echo ""
+
+    if [ "$errors" -eq 0 ]; then
+      echo "✅ Rune is valid."
+      echo ""
+      exit 0
+    else
+      echo "❌ Rune is invalid."
+      echo ""
+      exit 1
+    fi
     ;;
 
   add)
