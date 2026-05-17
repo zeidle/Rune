@@ -354,15 +354,29 @@ validate_field() {
   fi
 }
 
-block_exists() {
+validate_block() {
   local field="$1"
   local file="$2"
+  local content
 
-  if grep -q "^$field: |" "$file"; then
-    doctor_ok "block exists: $field"
+  if ! grep -q "^$field: |" "$file"; then
+    doctor_warn "missing block: $field"
+    return 1
+  fi
+
+  doctor_ok "block exists: $field"
+
+  content=$(
+    awk "/^$field: \|/{flag=1;next}/^[^ ]/{flag=0}flag" "$file" \
+      | sed 's/^[[:space:]]*//' \
+      | sed '/^$/d'
+  )
+
+  if [ -n "$content" ]; then
+    doctor_ok "block has content: $field"
     return 0
   else
-    doctor_warn "missing block: $field"
+    doctor_warn "block is empty: $field"
     return 1
   fi
 }
@@ -1079,9 +1093,9 @@ case "$command" in
     echo ""
     echo "Help blocks:"
 
-    block_exists "usage" "$yaml" || warnings=$((warnings + 1))
-    block_exists "options" "$yaml" || warnings=$((warnings + 1))
-    block_exists "examples" "$yaml" || warnings=$((warnings + 1))
+    validate_block "usage" "$yaml" || warnings=$((warnings + 1))
+    validate_block "options" "$yaml" || warnings=$((warnings + 1))
+    validate_block "examples" "$yaml" || warnings=$((warnings + 1))
 
     echo ""
     echo "Summary:"
