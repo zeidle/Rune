@@ -647,6 +647,16 @@ case "$command" in
     echo ""
 
     echo "Requires:"
+
+    echo ""
+    echo "Args:"
+
+    if grep -q "^args:" "$yaml"; then
+      echo "  declared"
+    else
+      echo "  none"
+    fi
+
     deps=$(get_requires "$yaml")
 
     if [ -z "$deps" ]; then
@@ -871,6 +881,16 @@ case "$command" in
 
     echo ""
     echo "Help blocks:"
+
+    echo ""
+    echo "Args:"
+
+    if grep -q "^args:" "$yaml"; then
+      doctor_ok "args section exists"
+    else
+      doctor_warn "missing args section"
+      warnings=$((warnings + 1))
+    fi
 
     block_exists "usage" "$yaml" || warnings=$((warnings + 1))
     block_exists "options" "$yaml" || warnings=$((warnings + 1))
