@@ -83,6 +83,79 @@ has_args_declared() {
   ' "$file"
 }
 
+print_args_info() {
+  local file="$1"
+
+  awk '
+    /^args:[[:space:]]*$/ {
+      in_args=1
+      next
+    }
+
+    /^args:[[:space:]]*\[\][[:space:]]*$/ {
+      exit
+    }
+
+    in_args && /^[^[:space:]]/ {
+      in_args=0
+    }
+
+    in_args && /^[[:space:]]*-[[:space:]]*flag:/ {
+      if (flag != "") {
+        print_arg(flag, value, required, description)
+      }
+
+      flag=$0
+      sub(/^[[:space:]]*-[[:space:]]*flag:[[:space:]]*/, "", flag)
+
+      value=""
+      required="false"
+      description=""
+      next
+    }
+
+    in_args && /^[[:space:]]*value:/ {
+      value=$0
+      sub(/^[[:space:]]*value:[[:space:]]*/, "", value)
+      next
+    }
+
+    in_args && /^[[:space:]]*required:/ {
+      required=$0
+      sub(/^[[:space:]]*required:[[:space:]]*/, "", required)
+      next
+    }
+
+    in_args && /^[[:space:]]*description:/ {
+      description=$0
+      sub(/^[[:space:]]*description:[[:space:]]*/, "", description)
+      next
+    }
+
+    END {
+      if (flag != "") {
+        print_arg(flag, value, required, description)
+      }
+    }
+
+    function print_arg(flag, value, required, description, label, display) {
+      label = "optional"
+
+      if (required == "true") {
+        label = "required"
+      }
+
+      display = flag
+
+      if (value != "") {
+        display = display " <" value ">"
+      }
+
+      printf "  %-22s %-10s %s\n", display, label, description
+    }
+  ' "$file"
+}
+
 check_requires() {
   local file="$1"
   local deps
@@ -690,9 +763,9 @@ case "$command" in
 
     echo ""
     echo "Args:"
-
+    
     if has_args_declared "$yaml"; then
-      echo "  declared"
+      print_args_info "$yaml"
     else
       echo "  none"
     fi
