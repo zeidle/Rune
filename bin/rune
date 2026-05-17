@@ -112,6 +112,57 @@ is_supported_runtime() {
   esac
 }
 
+rune_dir() {
+  echo "$RUNE_DIR/$1"
+}
+
+rune_yaml() {
+  echo "$(rune_dir "$1")/rune.yaml"
+}
+
+require_target() {
+  local target="$1"
+
+  if [ -z "$target" ]; then
+    echo "❌ Missing rune name."
+    echo "Run:"
+    echo "  rune list"
+    exit 1
+  fi
+}
+
+require_rune() {
+  local target="$1"
+  local dir
+
+  require_target "$target"
+
+  dir="$(rune_dir "$target")"
+
+  if [ ! -d "$dir" ]; then
+    echo "❌ Rune not found: $target"
+    echo "Run:"
+    echo "  rune list"
+    exit 1
+  fi
+}
+
+require_rune_config() {
+  local target="$1"
+  local yaml
+
+  require_rune "$target"
+
+  yaml="$(rune_yaml "$target")"
+
+  if [ ! -f "$yaml" ]; then
+    echo "❌ Missing rune.yaml for: $target"
+    echo "Run:"
+    echo "  rune validate $target"
+    exit 1
+  fi
+}
+
 validate_field() {
   local field="$1"
   local file="$2"
@@ -143,8 +194,8 @@ block_exists() {
 
 validate_rune_quiet() {
   local target="$1"
-  local dir="$RUNE_DIR/$target"
-  local yaml="$dir/rune.yaml"
+  local dir
+  local yaml
   local errors=0
   local name
   local runtime
@@ -152,6 +203,9 @@ validate_rune_quiet() {
   local schema_version
   local entry_path
   local deps
+
+  dir="$(rune_dir "$target")"
+  yaml="$(rune_yaml "$target")"
 
   if [ ! -d "$dir" ]; then
     return 1
@@ -231,15 +285,16 @@ print_global_help() {
   echo "  help <name>            Show help for a rune"
   echo "  edit <name>            Edit rune entry file"
   echo "  edit <name> --config   Edit rune.yaml"
-  echo "  edit <name> --all      Open rune directory"
-  echo "  remove <name>          Delete rune with confirmation"
-  echo "  remove <name> --force  Delete rune without confirmation"
+  echo "  edit <name> --all      Open rune directory in editor"
   echo "  path <name>            Print rune directory path"
   echo "  open <name>            Open rune directory"
+  echo "  remove <name>          Delete rune with confirmation"
+  echo "  remove <name> --force  Delete rune without confirmation"
   echo ""
   echo "Diagnostics:"
   echo "  info <name>            Show rune metadata and status"
   echo "  validate <name>        Validate rune manifest and structure"
+  echo "  validate --all         Validate all installed runes"
   echo "  doctor                 Check Rune installation"
   echo ""
   echo "Maintenance:"
@@ -253,11 +308,12 @@ print_global_help() {
   echo "  rune help ios-run"
   echo "  rune info ios-run"
   echo "  rune validate ios-run"
+  echo "  rune validate --all"
+  echo "  rune path ios-run"
+  echo "  rune open ios-run"
   echo "  rune doctor"
   echo "  rune update"
   echo "  rune version"
-  echo "  rune path ios-run"
-  echo "  rune open ios-run"
   echo ""
 }
 
@@ -273,52 +329,6 @@ case "$command" in
 
   version|--version|-v)
     echo "Rune $RUNE_VERSION"
-    ;;
-
-  path)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
-
-    dir="$RUNE_DIR/$target"
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      exit 1
-    fi
-
-    echo "$dir"
-    ;;
-
-  open)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
-
-    dir="$RUNE_DIR/$target"
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      exit 1
-    fi
-
-    if command -v open >/dev/null 2>&1; then
-      open "$dir"
-    elif command -v xdg-open >/dev/null 2>&1; then
-      xdg-open "$dir"
-    else
-      echo "Could not open directory automatically."
-      echo ""
-      echo "Path:"
-      echo "  $dir"
-      exit 1
-    fi
     ;;
 
   doctor)
@@ -453,7 +463,12 @@ case "$command" in
       version=$(get_field version "$yaml")
       desc=$(get_field description "$yaml")
 
-      printf "  %-20s %-8s %-8s %s\n" "${name:-$(basename "$dir")}" "${runtime:-unknown}" "${version:-unknown}" "${desc:-No description}"
+      printf "  %-20s %-8s %-8s %s\n" \
+        "${name:-$(basename "$dir")}" \
+        "${runtime:-unknown}" \
+        "${version:-unknown}" \
+        "${desc:-No description}"
+
       found=true
     done
 
@@ -465,30 +480,10 @@ case "$command" in
     ;;
 
   run)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
+    require_rune_config "$target"
 
-    dir="$RUNE_DIR/$target"
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
-
-    yaml="$dir/rune.yaml"
-
-    if [ ! -f "$yaml" ]; then
-      echo "❌ Missing rune.yaml for: $target"
-      echo "Run:"
-      echo "  rune validate $target"
-      exit 1
-    fi
+    dir="$(rune_dir "$target")"
+    yaml="$(rune_yaml "$target")"
 
     runtime=$(get_field runtime "$yaml")
 
@@ -549,19 +544,9 @@ case "$command" in
       exit 0
     fi
 
-    dir="$RUNE_DIR/$target"
+    require_rune_config "$target"
 
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      exit 1
-    fi
-
-    yaml="$dir/rune.yaml"
-
-    if [ ! -f "$yaml" ]; then
-      echo "❌ Missing rune.yaml for: $target"
-      exit 1
-    fi
+    yaml="$(rune_yaml "$target")"
 
     echo ""
     echo "NAME"
@@ -581,33 +566,40 @@ case "$command" in
     echo ""
     ;;
 
-  info)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
+  path)
+    require_rune "$target"
+
+    echo "$(rune_dir "$target")"
+    ;;
+
+  open)
+    require_rune "$target"
+
+    dir="$(rune_dir "$target")"
+
+    if command -v open >/dev/null 2>&1; then
+      open "$dir"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$dir"
+    else
+      echo "Could not open directory automatically."
+      echo ""
+      echo "Path:"
+      echo "  $dir"
       exit 1
     fi
+    ;;
 
-    dir="$RUNE_DIR/$target"
-    yaml="$dir/rune.yaml"
+  info)
+    require_rune_config "$target"
+
+    dir="$(rune_dir "$target")"
+    yaml="$(rune_yaml "$target")"
 
     echo ""
     echo "Rune Info"
     echo "=================================="
     echo ""
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      echo ""
-      exit 1
-    fi
-
-    if [ ! -f "$yaml" ]; then
-      echo "❌ Missing rune.yaml for: $target"
-      echo ""
-      exit 1
-    fi
 
     name=$(get_field name "$yaml")
     version=$(get_field version "$yaml")
@@ -762,16 +754,10 @@ case "$command" in
       fi
     fi
 
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      echo "  rune validate --all"
-      exit 1
-    fi
+    require_rune_config "$target"
 
-    dir="$RUNE_DIR/$target"
-    yaml="$dir/rune.yaml"
+    dir="$(rune_dir "$target")"
+    yaml="$(rune_yaml "$target")"
 
     errors=0
     warnings=0
@@ -786,22 +772,8 @@ case "$command" in
     echo ""
 
     echo "Checks:"
-
-    if [ -d "$dir" ]; then
-      doctor_ok "rune directory exists"
-    else
-      doctor_fail "rune directory missing: $dir"
-      echo ""
-      exit 1
-    fi
-
-    if [ -f "$yaml" ]; then
-      doctor_ok "rune.yaml exists"
-    else
-      doctor_fail "rune.yaml missing: $yaml"
-      echo ""
-      exit 1
-    fi
+    doctor_ok "rune directory exists"
+    doctor_ok "rune.yaml exists"
 
     echo ""
     echo "Required fields:"
@@ -963,7 +935,7 @@ case "$command" in
       description="Reusable automation script"
     fi
 
-    dir="$RUNE_DIR/$name"
+    dir="$(rune_dir "$name")"
 
     if [ -d "$dir" ]; then
       echo "❌ Rune already exists: $name"
@@ -1146,26 +1118,10 @@ EOF
     ;;
 
   edit)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
+    require_rune_config "$target"
 
-    dir="$RUNE_DIR/$target"
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      exit 1
-    fi
-
-    yaml="$dir/rune.yaml"
-
-    if [ ! -f "$yaml" ]; then
-      echo "❌ Missing rune.yaml for: $target"
-      exit 1
-    fi
+    dir="$(rune_dir "$target")"
+    yaml="$(rune_yaml "$target")"
 
     entry=$(get_field entry "$yaml")
 
@@ -1187,19 +1143,9 @@ EOF
     ;;
 
   remove)
-    if [ -z "$target" ]; then
-      echo "❌ Missing rune name."
-      echo "Run:"
-      echo "  rune list"
-      exit 1
-    fi
+    require_rune "$target"
 
-    dir="$RUNE_DIR/$target"
-
-    if [ ! -d "$dir" ]; then
-      echo "❌ Rune not found: $target"
-      exit 1
-    fi
+    dir="$(rune_dir "$target")"
 
     if [ "$1" != "--force" ]; then
       echo ""
