@@ -57,15 +57,28 @@ get_requires() {
 check_requires() {
   local file="$1"
   local deps
+  local missing=0
 
   deps=$(get_requires "$file")
 
-  for dep in $deps; do
+  while IFS= read -r dep; do
+    [ -z "$dep" ] && continue
+
     if ! command -v "$dep" >/dev/null 2>&1; then
-      echo "❌ Missing dependency: $dep"
-      exit 1
+      if [ "$missing" -eq 0 ]; then
+        echo "❌ Missing dependencies:"
+      fi
+
+      echo "  $dep"
+      missing=$((missing + 1))
     fi
-  done
+  done <<< "$deps"
+
+  if [ "$missing" -gt 0 ]; then
+    return 1
+  fi
+
+  return 0
 }
 
 doctor_ok() {
@@ -333,6 +346,8 @@ case "$command" in
 
     if [ ! -d "$dir" ]; then
       echo "❌ Rune not found: $target"
+      echo "Run:"
+      echo "  rune list"
       exit 1
     fi
 
@@ -340,6 +355,24 @@ case "$command" in
 
     if [ ! -f "$yaml" ]; then
       echo "❌ Missing rune.yaml for: $target"
+      echo "Run:"
+      echo "  rune validate $target"
+      exit 1
+    fi
+
+    runtime=$(get_field runtime "$yaml")
+
+    if [ -z "$runtime" ]; then
+      echo "❌ Missing runtime in rune.yaml for: $target"
+      echo "Run:"
+      echo "  rune validate $target"
+      exit 1
+    fi
+
+    if ! is_supported_runtime "$runtime"; then
+      echo "❌ Unsupported runtime: $runtime"
+      echo "Run:"
+      echo "  rune validate $target"
       exit 1
     fi
 
@@ -353,14 +386,28 @@ case "$command" in
 
     if [ ! -f "$entry_path" ]; then
       echo "❌ Entry file not found: $entry"
+      echo "Run:"
+      echo "  rune validate $target"
       exit 1
     fi
 
     if [ ! -x "$entry_path" ]; then
-      chmod +x "$entry_path"
+      echo "❌ Entry file is not executable: $entry"
+      echo ""
+      echo "Fix:"
+      echo "  chmod +x \"$entry_path\""
+      echo ""
+      echo "Or run:"
+      echo "  rune validate $target"
+      exit 1
     fi
 
-    check_requires "$yaml"
+    if ! check_requires "$yaml"; then
+      echo ""
+      echo "Run:"
+      echo "  rune validate $target"
+      exit 1
+    fi
 
     echo "▶ Running $target..."
     "$entry_path" "$@"
@@ -391,7 +438,7 @@ case "$command" in
     echo "    $(get_field name "$yaml") - $(get_field description "$yaml")"
     echo ""
 
-    echo "SYNOPSIS"
+    echo "USAGE"
     print_block usage "$yaml"
     echo ""
 
