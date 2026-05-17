@@ -10,7 +10,7 @@ RUNE_BIN="$RUNE_HOME/bin"
 RUNE_EXEC="$RUNE_BIN/rune"
 RUNE_DIR="$RUNE_HOME/runes"
 
-RUNE_VERSION="0.5.0"
+RUNE_VERSION="0.6.0"
 RUNE_REPO_RAW_URL="https://raw.githubusercontent.com/zeidle/rune/main"
 
 mkdir -p "$RUNE_BIN"
@@ -29,7 +29,9 @@ get_field() {
 }
 
 print_block() {
-  awk "/^$1: \|/{flag=1;next}/^[^ ]/{flag=0}flag" "$2" | sed 's/^  //'
+  awk "/^$1: \|/{flag=1;next}/^[^ ]/{flag=0}flag" "$2" \
+    | sed 's/^  //' \
+    | sed 's/^/    /'
 }
 
 get_requires() {
@@ -78,6 +80,25 @@ doctor_fail() {
   echo "❌ $1"
 }
 
+is_valid_rune_name() {
+  local name="$1"
+
+  [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]]
+}
+
+is_supported_runtime() {
+  local runtime="$1"
+
+  case "$runtime" in
+    bash|python|node|ruby|swift|go)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 validate_field() {
   local field="$1"
   local file="$2"
@@ -115,30 +136,36 @@ print_global_help() {
   echo "Usage:"
   echo "  rune <command> [options]"
   echo ""
-  echo "Commands:"
+  echo "Core:"
+  echo "  add                    Create a new rune"
   echo "  list                   List available runes"
   echo "  run <name> [args...]   Run a rune"
   echo "  help <name>            Show help for a rune"
-  echo "  info <name>            Show rune metadata and status"
-  echo "  validate <name>        Validate rune manifest and structure"
-  echo "  add                    Create new rune"
   echo "  edit <name>            Edit rune entry file"
   echo "  edit <name> --config   Edit rune.yaml"
   echo "  edit <name> --all      Open rune directory"
-  echo "  remove <name>          Delete rune"
-  echo "  update                 Update Rune CLI"
-  echo "  version                Show Rune version"
+  echo "  remove <name>          Delete rune with confirmation"
+  echo "  remove <name> --force  Delete rune without confirmation"
+  echo ""
+  echo "Diagnostics:"
+  echo "  info <name>            Show rune metadata and status"
+  echo "  validate <name>        Validate rune manifest and structure"
   echo "  doctor                 Check Rune installation"
   echo ""
+  echo "Maintenance:"
+  echo "  update                 Update Rune CLI"
+  echo "  version                Show Rune version"
+  echo ""
   echo "Examples:"
+  echo "  rune add"
   echo "  rune list"
   echo "  rune run ios-run --scheme App"
   echo "  rune help ios-run"
   echo "  rune info ios-run"
   echo "  rune validate ios-run"
+  echo "  rune doctor"
   echo "  rune update"
   echo "  rune version"
-  echo "  rune doctor"
   echo ""
 }
 
@@ -410,6 +437,7 @@ case "$command" in
     description=$(get_field description "$yaml")
     runtime=$(get_field runtime "$yaml")
     entry=$(get_field entry "$yaml")
+    schema_version=$(get_field schema_version "$yaml")
 
     if [ -z "$entry" ]; then
       entry="run"
@@ -427,6 +455,10 @@ case "$command" in
 
     echo "Version:"
     echo "  ${version:-unknown}"
+    echo ""
+
+    echo "Schema version:"
+    echo "  ${schema_version:-unknown}"
     echo ""
 
     echo "Runtime:"
@@ -537,6 +569,7 @@ case "$command" in
     echo ""
     echo "Required fields:"
 
+    validate_field "schema_version" "$yaml" || errors=$((errors + 1))
     validate_field "name" "$yaml" || errors=$((errors + 1))
     validate_field "version" "$yaml" || errors=$((errors + 1))
     validate_field "description" "$yaml" || errors=$((errors + 1))
@@ -546,6 +579,7 @@ case "$command" in
     name=$(get_field name "$yaml")
     runtime=$(get_field runtime "$yaml")
     entry=$(get_field entry "$yaml")
+    schema_version=$(get_field schema_version "$yaml")
 
     if [ -z "$entry" ]; then
       entry="run"
@@ -555,6 +589,14 @@ case "$command" in
 
     echo ""
     echo "Manifest consistency:"
+
+    if [ -n "$schema_version" ] && [ "$schema_version" != "1" ]; then
+      doctor_warn "unsupported schema_version: $schema_version"
+      echo "  Current supported schema_version: 1"
+      warnings=$((warnings + 1))
+    elif [ "$schema_version" = "1" ]; then
+      doctor_ok "schema_version is supported: $schema_version"
+    fi
 
     if [ -n "$name" ] && [ "$name" != "$target" ]; then
       doctor_warn "manifest name differs from directory name"
@@ -645,15 +687,46 @@ case "$command" in
   add)
     read -p "Name: " name
     read -p "Description: " description
-    read -p "Runtime (bash/python) [bash]: " runtime
+    read -p "Runtime (bash/python/node/ruby/swift/go) [bash]: " runtime
 
     runtime=${runtime:-bash}
-    dir="$RUNE_DIR/$name"
 
     if [ -z "$name" ]; then
       echo "❌ Name is required."
       exit 1
     fi
+
+    if ! is_valid_rune_name "$name"; then
+      echo "❌ Invalid rune name: $name"
+      echo ""
+      echo "Use only letters, numbers, dash and underscore."
+      echo "Examples:"
+      echo "  clean-derived-data"
+      echo "  push_notification"
+      echo "  txt-to-sqlite"
+      echo ""
+      exit 1
+    fi
+
+    if ! is_supported_runtime "$runtime"; then
+      echo "❌ Unsupported runtime: $runtime"
+      echo ""
+      echo "Supported runtimes:"
+      echo "  bash"
+      echo "  python"
+      echo "  node"
+      echo "  ruby"
+      echo "  swift"
+      echo "  go"
+      echo ""
+      exit 1
+    fi
+
+    if [ -z "$description" ]; then
+      description="Reusable automation script"
+    fi
+
+    dir="$RUNE_DIR/$name"
 
     if [ -d "$dir" ]; then
       echo "❌ Rune already exists: $name"
@@ -663,6 +736,7 @@ case "$command" in
     mkdir -p "$dir"
 
     cat > "$dir/rune.yaml" <<EOF
+schema_version: 1
 name: $name
 version: 1.0.0
 description: $description
@@ -670,24 +744,153 @@ description: $description
 requires: []
 
 usage: |
-  rune run $name
+  rune run $name [options]
 
 options: |
+  --help     Show help
 
 examples: |
+  rune run $name
 
 runtime: $runtime
 entry: run
 EOF
 
-    cat > "$dir/run" <<EOF
+    case "$runtime" in
+      bash)
+        cat > "$dir/run" <<EOF
 #!/bin/bash
 set -e
+
+show_help() {
+  echo "Usage:"
+  echo "  rune run $name [options]"
+  echo ""
+  echo "Options:"
+  echo "  --help     Show help"
+}
+
+case "\${1:-}" in
+  --help|-h)
+    show_help
+    exit 0
+    ;;
+esac
 
 # $description
 
 echo "Hello from $name"
 EOF
+        ;;
+
+      python)
+        cat > "$dir/run" <<EOF
+#!/usr/bin/env python3
+import sys
+
+def show_help():
+    print("Usage:")
+    print("  rune run $name [options]")
+    print()
+    print("Options:")
+    print("  --help     Show help")
+
+if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+    show_help()
+    sys.exit(0)
+
+# $description
+
+print("Hello from $name")
+EOF
+        ;;
+
+      node)
+        cat > "$dir/run" <<EOF
+#!/usr/bin/env node
+
+function showHelp() {
+  console.log("Usage:");
+  console.log("  rune run $name [options]");
+  console.log("");
+  console.log("Options:");
+  console.log("  --help     Show help");
+}
+
+if (process.argv[2] === "--help" || process.argv[2] === "-h") {
+  showHelp();
+  process.exit(0);
+}
+
+// $description
+
+console.log("Hello from $name");
+EOF
+        ;;
+
+      ruby)
+        cat > "$dir/run" <<EOF
+#!/usr/bin/env ruby
+
+def show_help
+  puts "Usage:"
+  puts "  rune run $name [options]"
+  puts ""
+  puts "Options:"
+  puts "  --help     Show help"
+end
+
+if ARGV[0] == "--help" || ARGV[0] == "-h"
+  show_help
+  exit 0
+end
+
+# $description
+
+puts "Hello from $name"
+EOF
+        ;;
+
+      swift)
+        cat > "$dir/run" <<EOF
+#!/usr/bin/env swift
+
+import Foundation
+
+func showHelp() {
+    print("Usage:")
+    print("  rune run $name [options]")
+    print("")
+    print("Options:")
+    print("  --help     Show help")
+}
+
+if CommandLine.arguments.dropFirst().first == "--help" || CommandLine.arguments.dropFirst().first == "-h" {
+    showHelp()
+    exit(0)
+}
+
+// $description
+
+print("Hello from $name")
+EOF
+        ;;
+
+      go)
+        cat > "$dir/run" <<EOF
+#!/usr/bin/env bash
+set -e
+
+echo "This rune uses Go."
+echo ""
+echo "Suggested structure:"
+echo "  main.go"
+echo ""
+echo "Next steps:"
+echo "  rune edit $name"
+EOF
+        ;;
+    esac
 
     chmod +x "$dir/run"
 
@@ -697,6 +900,12 @@ EOF
 
     echo ""
     echo "✅ Rune '$name' created."
+    echo ""
+    echo "Next steps:"
+    echo "  rune validate $name"
+    echo "  rune run $name"
+    echo "  rune help $name"
+    echo ""
     ;;
 
   edit)
@@ -750,13 +959,30 @@ EOF
 
     dir="$RUNE_DIR/$target"
 
-    if [ -d "$dir" ]; then
-      rm -rf "$dir"
-      echo "🗑 Rune '$target' removed."
-    else
+    if [ ! -d "$dir" ]; then
       echo "❌ Rune not found: $target"
       exit 1
     fi
+
+    if [ "$1" != "--force" ]; then
+      echo ""
+      echo "This will permanently delete rune '$target':"
+      echo "  $dir"
+      echo ""
+      read -p "Continue? [y/N]: " confirm
+
+      case "$confirm" in
+        y|Y|yes|YES)
+          ;;
+        *)
+          echo "Cancelled."
+          exit 0
+          ;;
+      esac
+    fi
+
+    rm -rf "$dir"
+    echo "🗑 Rune '$target' removed."
     ;;
 
   update)
