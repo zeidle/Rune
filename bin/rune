@@ -235,6 +235,7 @@ print_global_help() {
   echo "  remove <name>          Delete rune with confirmation"
   echo "  remove <name> --force  Delete rune without confirmation"
   echo "  path <name>            Print rune directory path"
+  echo "  open <name>            Open rune directory"
   echo ""
   echo "Diagnostics:"
   echo "  info <name>            Show rune metadata and status"
@@ -256,6 +257,7 @@ print_global_help() {
   echo "  rune update"
   echo "  rune version"
   echo "  rune path ios-run"
+  echo "  rune open ios-run"
   echo ""
 }
 
@@ -289,6 +291,34 @@ case "$command" in
     fi
 
     echo "$dir"
+    ;;
+
+  open)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
+    dir="$RUNE_DIR/$target"
+
+    if [ ! -d "$dir" ]; then
+      echo "❌ Rune not found: $target"
+      exit 1
+    fi
+
+    if command -v open >/dev/null 2>&1; then
+      open "$dir"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$dir"
+    else
+      echo "Could not open directory automatically."
+      echo ""
+      echo "Path:"
+      echo "  $dir"
+      exit 1
+    fi
     ;;
 
   doctor)
