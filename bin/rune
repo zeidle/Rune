@@ -402,9 +402,12 @@ case "$command" in
   list)
     echo ""
     echo "Available runes:"
-    echo "-----------------------------------"
+    echo "---------------------------------------------------------------"
 
     found=false
+
+    printf "  %-20s %-8s %-8s %s\n" "NAME" "RUNTIME" "VERSION" "DESCRIPTION"
+    printf "  %-20s %-8s %-8s %s\n" "----" "-------" "-------" "-----------"
 
     for dir in "$RUNE_DIR"/*; do
       [ -d "$dir" ] || continue
@@ -416,9 +419,11 @@ case "$command" in
       fi
 
       name=$(get_field name "$yaml")
+      runtime=$(get_field runtime "$yaml")
+      version=$(get_field version "$yaml")
       desc=$(get_field description "$yaml")
 
-      printf "  %-20s %s\n" "$name" "$desc"
+      printf "  %-20s %-8s %-8s %s\n" "${name:-$(basename "$dir")}" "${runtime:-unknown}" "${version:-unknown}" "${desc:-No description}"
       found=true
     done
 
