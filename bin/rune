@@ -54,6 +54,35 @@ get_requires() {
   ' "$file" || true
 }
 
+has_args_declared() {
+  local file="$1"
+
+  awk '
+    /^args:[[:space:]]*\[\][[:space:]]*$/ {
+      found=0
+      exit
+    }
+
+    /^args:[[:space:]]*$/ {
+      flag=1
+      next
+    }
+
+    /^[^[:space:]]/ {
+      flag=0
+    }
+
+    flag && /^[[:space:]]*-/ {
+      found=1
+      exit
+    }
+
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$file"
+}
+
 check_requires() {
   local file="$1"
   local deps
@@ -662,7 +691,7 @@ case "$command" in
     echo ""
     echo "Args:"
 
-    if grep -q "^args:" "$yaml"; then
+    if has_args_declared "$yaml"; then
       echo "  declared"
     else
       echo "  none"
@@ -884,6 +913,12 @@ case "$command" in
 
     if grep -q "^args:" "$yaml"; then
       doctor_ok "args section exists"
+
+      if has_args_declared "$yaml"; then
+        doctor_ok "args declared"
+      else
+        doctor_ok "no args declared"
+      fi
     else
       doctor_warn "missing args section"
       warnings=$((warnings + 1))
