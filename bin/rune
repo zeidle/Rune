@@ -141,6 +141,81 @@ block_exists() {
   fi
 }
 
+validate_rune_quiet() {
+  local target="$1"
+  local dir="$RUNE_DIR/$target"
+  local yaml="$dir/rune.yaml"
+  local errors=0
+  local name
+  local runtime
+  local entry
+  local schema_version
+  local entry_path
+  local deps
+
+  if [ ! -d "$dir" ]; then
+    return 1
+  fi
+
+  if [ ! -f "$yaml" ]; then
+    return 1
+  fi
+
+  schema_version=$(get_field schema_version "$yaml")
+  name=$(get_field name "$yaml")
+  runtime=$(get_field runtime "$yaml")
+  entry=$(get_field entry "$yaml")
+
+  [ -z "$schema_version" ] && errors=$((errors + 1))
+  [ -z "$name" ] && errors=$((errors + 1))
+  [ -z "$runtime" ] && errors=$((errors + 1))
+  [ -z "$entry" ] && errors=$((errors + 1))
+
+  if [ -n "$schema_version" ] && [ "$schema_version" != "1" ]; then
+    errors=$((errors + 1))
+  fi
+
+  if [ -n "$name" ] && [ "$name" != "$target" ]; then
+    errors=$((errors + 1))
+  fi
+
+  if [ -n "$runtime" ] && ! is_supported_runtime "$runtime"; then
+    errors=$((errors + 1))
+  fi
+
+  if [ -z "$entry" ]; then
+    entry="run"
+  fi
+
+  entry_path="$dir/$entry"
+
+  if [ ! -f "$entry_path" ]; then
+    errors=$((errors + 1))
+  fi
+
+  if [ -f "$entry_path" ] && [ ! -x "$entry_path" ]; then
+    errors=$((errors + 1))
+  fi
+
+  deps=$(get_requires "$yaml")
+
+  if [ -n "$deps" ]; then
+    while IFS= read -r dep; do
+      [ -z "$dep" ] && continue
+
+      if ! command -v "$dep" >/dev/null 2>&1; then
+        errors=$((errors + 1))
+      fi
+    done <<< "$deps"
+  fi
+
+  if [ "$errors" -eq 0 ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 print_global_help() {
   echo ""
   echo "Rune CLI $RUNE_VERSION"
@@ -573,10 +648,70 @@ case "$command" in
     ;;
 
   validate)
+    if [ "$target" = "--all" ]; then
+      echo ""
+      echo "Rune Validate All"
+      echo "=================================="
+      echo ""
+
+      valid=0
+      invalid=0
+      total=0
+      found=false
+
+      for dir in "$RUNE_DIR"/*; do
+        [ -d "$dir" ] || continue
+
+        rune_name="$(basename "$dir")"
+
+        if [ ! -f "$dir/rune.yaml" ]; then
+          continue
+        fi
+
+        found=true
+        total=$((total + 1))
+
+        if validate_rune_quiet "$rune_name"; then
+          echo "✅ $rune_name"
+          valid=$((valid + 1))
+        else
+          echo "❌ $rune_name"
+          invalid=$((invalid + 1))
+        fi
+      done
+
+      if [ "$found" = false ]; then
+        echo "No runes found."
+        echo ""
+        exit 0
+      fi
+
+      echo ""
+      echo "Summary:"
+      echo "  Valid:   $valid"
+      echo "  Invalid: $invalid"
+      echo "  Total:   $total"
+      echo ""
+
+      if [ "$invalid" -eq 0 ]; then
+        echo "✅ All runes are valid."
+        echo ""
+        exit 0
+      else
+        echo "❌ Some runes are invalid."
+        echo ""
+        echo "Run:"
+        echo "  rune validate <name>"
+        echo ""
+        exit 1
+      fi
+    fi
+
     if [ -z "$target" ]; then
       echo "❌ Missing rune name."
       echo "Run:"
       echo "  rune list"
+      echo "  rune validate --all"
       exit 1
     fi
 
