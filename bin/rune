@@ -234,6 +234,7 @@ print_global_help() {
   echo "  edit <name> --all      Open rune directory"
   echo "  remove <name>          Delete rune with confirmation"
   echo "  remove <name> --force  Delete rune without confirmation"
+  echo "  path <name>            Print rune directory path"
   echo ""
   echo "Diagnostics:"
   echo "  info <name>            Show rune metadata and status"
@@ -254,6 +255,7 @@ print_global_help() {
   echo "  rune doctor"
   echo "  rune update"
   echo "  rune version"
+  echo "  rune path ios-run"
   echo ""
 }
 
@@ -269,6 +271,24 @@ case "$command" in
 
   version|--version|-v)
     echo "Rune $RUNE_VERSION"
+    ;;
+
+  path)
+    if [ -z "$target" ]; then
+      echo "❌ Missing rune name."
+      echo "Run:"
+      echo "  rune list"
+      exit 1
+    fi
+
+    dir="$RUNE_DIR/$target"
+
+    if [ ! -d "$dir" ]; then
+      echo "❌ Rune not found: $target"
+      exit 1
+    fi
+
+    echo "$dir"
     ;;
 
   doctor)
